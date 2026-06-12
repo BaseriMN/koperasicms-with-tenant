@@ -103,6 +103,21 @@ class TenancyServiceProvider extends ServiceProvider
         $this->mapRoutes();
 
         $this->makeTenancyMiddlewareHighestPriority();
+
+        // FIX CACHE LEAK: Laravel memoize cache store sekali per request.
+        // Kalau store ter-resolve SEBELUM tenancy init, dia terikat ke
+        // connection CENTRAL sampai habis request — cache semua tenant
+        // bocor masuk satu table cache central. forgetDriver() paksa
+        // resolve semula ikut connection semasa setiap kali tenancy
+        // mula / tamat.
+        \Illuminate\Support\Facades\Event::listen(
+            \Stancl\Tenancy\Events\TenancyInitialized::class,
+            fn () => \Illuminate\Support\Facades\Cache::forgetDriver(config('cache.default'))
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \Stancl\Tenancy\Events\TenancyEnded::class,
+            fn () => \Illuminate\Support\Facades\Cache::forgetDriver(config('cache.default'))
+        );
     }
 
     protected function bootEvents()
