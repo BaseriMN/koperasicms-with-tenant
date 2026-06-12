@@ -204,38 +204,153 @@ php artisan optimize
 
 ---
 
-## 9. HALA TUJU: MULTI-TENANT SaaS (DIRANCANG — BELUM MULA)
+# BLUEPRINT UPDATE — MULTI-TENANT SaaS (SESI 2)
 
-### Keputusan dipersetujui
-- **Model:** SaaS — banyak koperasi guna satu sistem, jual/sewa
-- **Pengasingan:** DATABASE-PER-TENANT (bukan single-DB tenant_id) — data wajib terpisah, keselamatan tinggi
-- **Pengenalan tenant:** via DOMAIN (cth koperasibaling.com) — BUKAN port, BUKAN user masuk ID
-- **Daftar tenant:** manual oleh pemilik SaaS
-- **Pakej:** `stancl/tenancy`
-- **Custom = CONFIG** (logo/warna/modul on-off/setting per tenant), BUKAN kod berbeza. Satu code base — semua tenant kongsi feature/bugfix. (White-label + module access + toggle produk sedia ada = asas untuk ni.)
-- **Strategi:** buat dalam BRANCH/SALINAN baru. Live Baling jangan diganggu.
+> **Arahan:** GANTIKAN Seksyen 9 ("HALA TUJU: MULTI-TENANT SaaS") dalam blueprint lama dengan seksyen ini.
+> Status terkini: **FASA 1–4 SIAP & VERIFIED di dev.** Fasa 5–6 belum mula.
+> Tarikh sesi: 12 Jun 2026.
 
-### Seni bina
-- **Central DB:** senarai tenants + domains (tiada data koperasi)
-- **Tenant DB:** satu per koperasi (kop_baling, kop_kedah) — struktur sama, data terpisah
-- Satu app Laravel + nginx multi-domain → app pilih DB ikut domain
+---
 
-### 6 Fasa
-1. Install stancl/tenancy + central tables
-2. Pisah migration (central vs tenant/)
-3. Domain routing
-4. Provisioning command (auto cipta DB + migrate + seed)
-5. Migrate Baling jadi tenant pertama
-6. Test isolation
+## 9. MULTI-TENANT SaaS — PROGRESS
 
-### Cabaran khas
-- PostgreSQL (sokong, setup beza dari MySQL)
-- Storage per tenant (logo/foto asingkan)
-- Backup per tenant DB
-- wang()/config tak terjejas
+### 9.0 Status Fasa
 
-**Status: NOT STARTED. Mula bila user kata "jom mula Fasa 1".**
+| Fasa | Perkara | Status |
+|------|---------|--------|
+| 1 | Install stancl/tenancy + central tables | ✅ SIAP |
+| 2 | Pisah migration (central vs tenant) + DB-per-tenant verified | ✅ SIAP |
+| 3 | Domain routing + seeding + storage per-tenant (tenant_asset) | ✅ SIAP |
+| 4 | Provisioning command `tenant:cipta` (auto-cleanup) | ✅ SIAP |
+| 5 | Migrate Baling jadi tenant pertama (PRODUCTION) | ⏳ BELUM — Sesi 3 |
+| 6 | Test isolation menyeluruh | ⏳ BELUM |
 
+### 9.1 Projek & Repo
+
+- **Projek tenancy:** `~/koperasicmsv2` — SALINAN berasingan dari projek asal
+- **Repo:** `github.com/BaseriMN/koperasicms-with-tenant` (branch `main`)
+- **Projek lama** (`koperasicms`) = Baling LIVE, TIDAK disentuh langsung
+- ⚠️ **Hutang teknikal sedar:** bug fix di repo lama TAK auto masuk v2 (dan sebaliknya). Apply dua kali / cherry-pick. Bila Fasa 5 siap, **repo v2 jadi THE code base**, repo lama bersara.
+- **Pakej:** `stancl/tenancy` **v3.10.0** (Laravel 12 OK)
+- **DB dev:** PostgreSQL local (bukan SQLite lagi) — central DB dev: `koperasi_tenant`
+
+### 9.2 Seni Bina (Implemented)
+
+```
+SATU CODE BASE (1 repo)
+        │  request masuk → InitializeTenancyByDomain check domain
+        ▼
+┌─────────────────┬──────────────────┬──────────────────┐
+│ central DB      │ tenantdemo       │ tenantkedah      │
+│ (koperasi_      │ (DB penuh        │ (DB penuh        │
+│  tenant):       │  koperasi demo)  │  koperasi kedah) │
+│ tenants,        │                  │                  │
+│ domains, cache, │ 27 migration     │ 27 migration     │
+│ sessions        │ + seed essential │ + seed essential │
+└─────────────────┴──────────────────┴──────────────────┘
+```
+
+- **Pengasingan:** database-per-tenant. Nama DB = `tenant` + id (config prefix).
+- **Pengenalan tenant:** domain (table `domains`).
+- **Tenant sedia ada (dev):** `demo` → demo.localhost, `kedah` → kedah.localhost.
+- **Update code:** `git pull` → SEMUA tenant dapat serta-merta. Migration jadi 2 step (lihat 9.7).
+- **Driver `.env`:** `SESSION_DRIVER / CACHE_STORE / QUEUE_CONNECTION = database` — pengasingan cache & session datang PERCUMA via connection switch (DatabaseTenancyBootstrapper tukar default connection → cache/session store ikut sekali).
+
+### 9.3 Fail Penting & Perubahan
+
+| Fail | Perubahan |
+|------|-----------|
+| `app/Models/Tenant.php` | BARU — extends BaseTenant, `use HasDatabase, HasDomains;` implements TenantWithDatabase |
+| `config/tenancy.php` | `tenant_model => \App\Models\Tenant::class` (FQCN!); central_domains += koperasicms.site; `CacheTenancyBootstrapper` OFF; `asset_helper_tenancy => false` |
+| `bootstrap/providers.php` | + `App\Providers\TenancyServiceProvider::class` |
+| `app/Providers/TenancyServiceProvider.php` | `Jobs\SeedDatabase::class` di-UNCOMMENT (auto-seed bila tenant dicipta) |
+| `routes/web.php` | BARU — central sahaja, loop `Route::domain()` atas central_domains, landing ringkas |
+| `routes/app.php` | = web.php LAMA (di-rename via `git mv`, 176 line route app TIDAK diubah) |
+| `routes/tenant.php` | group middleware tenancy → `require __DIR__.'/app.php';` |
+| `app/Console/Commands/TenantCipta.php` | BARU — command provisioning (lihat 9.6) |
+| `database/migrations/` | CENTRAL: tenants, domains, cache, **sessions (migration baru)** |
+| `database/migrations/tenant/` | 26 migration app + 1 cache = **27 fail** |
+| `resources/views/*` (9 fail, 12 tempat) | `asset('storage/' . $x)` → `tenant_asset($x)` (mass sed) |
+
+### 9.4 Storage Per-Tenant
+
+- Lokasi fail tenant: `storage/tenant<ID>/app/public/...` (auto oleh FilesystemTenancyBootstrapper, `suffix_storage_path => true`)
+- Paparan fail upload: **WAJIB `tenant_asset($path)`** — serve via route `/tenancy/assets/...` (TenantAssetsController). Tiada symlink per tenant diperlukan. Tenant hanya nampak fail sendiri.
+- `asset()` biasa = public/ central sahaja (helper hijack OFF).
+
+### 9.5 Seeding
+
+- `DatabaseSeeder` = **TenantSeeder de facto**: 6 essential sahaja —
+  Role → Permission → SuperUser → ModuleAccess → AccountCategory → Setting.
+  Sample seeders (Member/AccountEntry/Loan/MeetingSample) kekal COMMENTED.
+- Auto-seed: pipeline `TenantCreated` → CreateDatabase → MigrateDatabase → SeedDatabase.
+- Super-user (muhamad.baseri@gmail.com) di-seed dalam SETIAP tenant = jalan masuk pemilik SaaS.
+- Seeder bersifat **idempotent** (selamat re-run; verified tiada duplikasi selepas double-seed kedah).
+
+### 9.6 Command `tenant:cipta`
+
+```bash
+php artisan tenant:cipta <id> <domain> --nama="Nama Koperasi"
+# cth: php artisan tenant:cipta kedah kedah.localhost --nama="Koperasi Kedah Berhad"
+```
+
+Buat: validasi (regex id `^[a-z0-9][a-z0-9-]{1,30}$`, tenant unik, domain unik) → create tenant (auto DB+migrate+seed) → pasang domain → set `nama_koperasi` via `$tenant->run()`.
+**Auto-cleanup bila gagal:** `tenancy()->end()` → delete raw row domains+tenants → `DROP DATABASE IF EXISTS` (BUKAN `$tenant->delete()` — pipeline delete sendiri boleh fail).
+Failure tests lulus: tenant wujud / domain dipakai / id tak sah.
+
+### 9.7 Rutin Deploy BAHARU (bila v2 ke production)
+
+```bash
+git pull
+composer dump-autoload
+php artisan migrate --force            # central DB
+php artisan tenants:migrate --force    # loop SEMUA tenant DB
+php artisan optimize:clear
+php artisan optimize
+```
+
+⚠️ `tenants:migrate` gagal separuh jalan = sesetengah tenant migrated, sesetengah tidak. Test migration di dev SEBELUM deploy. (Strategi handle penuh: bincang Fasa 5.)
+
+### 9.8 GOTCHA BARU (Sesi 2 — darah & air mata)
+
+1. **`tenant_model` WAJIB FQCN `\App\Models\Tenant::class`** dalam config/tenancy.php. Silap guna `Tenant::class` (ikut import Stancl base di atas fail) → error `Call to undefined method ...Tenant::database()` masa create tenant. Punca bug #1 sesi ni.
+2. **CacheTenancyBootstrapper MESTI OFF** bila `CACHE_STORE=database` — dia guna cache tags (Redis/Memcached sahaja). Kalau ON → crash "does not support tagging". Pengasingan cache datang dari connection switch, bukan bootstrapper ni.
+3. **`optimize:clear` selepas install stancl** — kalau tak: `Route [stancl.tenancy.asset] not defined`. (Gotcha #2 lama menyerang balik dalam konteks baru.)
+4. **Half-state bila create tenant GAGAL:** row-tanpa-DB atau DB-tanpa-row. Cuci: delete raw `domains` + `tenants`, `DROP DATABASE IF EXISTS "tenantXXX"`. Command `tenant:cipta` dah handle auto.
+5. **Table `sessions`:** versi tenant terbundle dalam migration users (folder tenant/) — central DB perlukan **migration sessions BERASINGAN** (dah dibuat). Simptom kalau tiada: central page error `relation "sessions" does not exist`.
+6. **`tenant_asset($path)` BUKAN `asset('storage/'.$path)`** untuk semua fail upload (logo/avatar/foto). Dan set `asset_helper_tenancy => false` (kalau true, SEMUA asset() di-hijack → URL rosak).
+7. **`migrate:fresh` = DROP SEMUA TABLE.** Guna di DB disposable sahaja. JANGAN SESEKALI di production.
+8. **Edit tak save / VS Code buka folder salah** — bila grep tak match dengan apa yang "dah diedit", 99% tengok fail lain dari yang terminal tengok. Verify dengan `grep -n` SELEPAS setiap edit penting. (Berlaku 3 kali sesi ni 😅)
+9. **Tinker: paste SATU line, tunggu hasil, baru line seterusnya.** Multi-line paste tersangkut/terpotong.
+10. **`$tenant->run(closure)`** = jalankan code "dalam" tenant (initialize → execute → end). Berguna untuk set setting per tenant dari central context.
+11. **`tenancy()->end()` sebelum DROP DATABASE** — PostgreSQL refuse drop DB yang ada active connection.
+
+### 9.9 PENDING KHUSUS TENANCY (sebelum/semasa Fasa 5)
+
+1. **[PARITY GAP]** `QUEUE_CONNECTION=database` tapi TIADA migration `create_jobs_table` dalam set v2. Check production Baling ada table `jobs` ke. Pilihan: tambah migration jobs ke tenant/, atau tukar `QUEUE_CONNECTION=sync`.
+2. **[PARITY CHECK — KRITIKAL]** Banding schema migration v2 vs DB production Baling sebenar (`php artisan db:show` di production / pg_dump --schema-only) SEBELUM import. Migration v2 dah dirombak/direnumber — wajib sahkan tiada column tertinggal.
+3. **[CLEANUP]** `create_savings_table` (deprecated, 0 rekod) masih dalam tenant migrations — decide buang sebelum Fasa 5 supaya tenant baru tak dapat table mati.
+4. **[KEPUTUSAN TERBUKA]** Strategi domain production: subdomain wildcard (`*.koperasicms.site` — DNS wildcard + SSL wildcard, senang) vs custom domain per koperasi (perlu DNS + certbot per domain) vs dua-dua. Cadangan: subdomain default, custom domain optional.
+5. **[BACKUP]** spatie/laravel-backup masih config single-DB — perlu jadi per-tenant (loop tenants / pg_dump per DB). Bincang Fasa 5.
+6. **[STORAGE BALING]** Foto/logo/avatar Baling sedia ada perlu PINDAH ke `storage/tenantbaling/app/public/` masa migrate.
+
+### 9.10 FASA 5 — RANGKA (Sesi 3)
+
+> Fasa paling berisiko: production + data sebenar ~1000 ahli + downtime window. JANGAN mula tanpa plan penuh + backup verified.
+
+Langkah kasar (akan diperhalusi awal Sesi 3):
+1. Settle pending 9.9 #1–#4 di dev dulu
+2. Backup penuh production (DB + storage) — verified restore
+3. Deploy v2 ke server side-by-side (folder/vhost berasingan, JANGAN ganti yang live)
+4. `pg_dump` DB Baling → restore sebagai `tenantbaling` + daftar row tenant + domain
+5. Pindah storage files → `storage/tenantbaling/`
+6. nginx multi-domain + DNS + SSL
+7. Test menyeluruh atas domain staging (login, lejar, dividen, laporan — banding angka dengan live)
+8. Switch domain sebenar + monitoring. Rollback plan: tukar balik nginx ke app lama (app lama TIDAK dipadam sehingga stabil berminggu)
+
+---
+
+*Tamat update Sesi 2. Sesi 3: mula dengan "jom plan Fasa 5" — settle 9.9 dulu sebelum sentuh production.*
 ---
 
 ## 10. CARA KERJA DENGAN USER (PREFERENCES)
@@ -648,6 +763,167 @@ php artisan optimize
 7. **Toggle produk:** kawal UI/route via `settings` (produk_simpanan/produk_pinjaman), bukan struktur DB — data simpanan/pinjaman tetap dalam transactions/loans.
 
 ---
+
+# BLUEPRINT DATABASE UPDATE — MULTI-TENANT (SESI 2)
+
+> **Arahan:** TAMBAH seksyen ini di bahagian ATAS Blueprint Database lama.
+> Mulai Sesi 2, sistem ada DUA jenis database: **CENTRAL** (1 sahaja) dan **TENANT** (1 per koperasi).
+> Blueprint Database lama (members, transactions, loans, dll) kini menerangkan **struktur DB TENANT**.
+
+---
+
+## D0. SENI BINA DATABASE (TENANCY)
+
+```
+┌────────────────────────── CENTRAL DB ──────────────────────────┐
+│  Nama (dev): koperasi_tenant                                   │
+│  Isi: senarai tenant + infra. TIADA DATA KOPERASI LANGSUNG.    │
+│                                                                 │
+│  ┌─────────┐ 1   N ┌─────────┐   ┌───────┐ ┌──────────┐        │
+│  │ tenants ├───────│ domains │   │ cache │ │ sessions │        │
+│  └─────────┘       └─────────┘   └───────┘ └──────────┘        │
+└────────────────────────────────────────────────────────────────┘
+            │ id "demo"                │ id "kedah"
+            ▼                          ▼
+┌── TENANT DB: tenantdemo ──┐  ┌── TENANT DB: tenantkedah ──┐
+│ STRUKTUR SAMA SEMUA:      │  │ (struktur SERUPA, data     │
+│ users, roles, permissions,│  │  BERBEZA & TERPISAH TOTAL) │
+│ members, transactions,    │  │                            │
+│ loans, meetings, akaun,   │  │  + cache, sessions,        │
+│ dividend, settings, ...   │  │    password_reset_tokens   │
+│ (= Blueprint DB lama)     │  │    (per tenant!)           │
+└───────────────────────────┘  └────────────────────────────┘
+```
+
+**Peraturan emas:**
+- Nama DB tenant = `tenant` + id tenant (config `tenancy.database.prefix`). Cth: id `baling` → DB `tenantbaling`.
+- Migration central: `database/migrations/` (4 fail). Migration tenant: `database/migrations/tenant/` (27 fail).
+- Setiap DB (central & setiap tenant) ada table `migrations` SENDIRI — rekod migration masing-masing.
+- Query merentas tenant TIDAK boleh berlaku secara semula jadi — itulah point pengasingan.
+
+---
+
+## D1. TABLE CENTRAL DB
+
+### `tenants` — Senarai koperasi (stancl)
+| Lajur | Jenis | Nota |
+|-------|-------|------|
+| id | string PK | ID tenant, cth `demo`, `kedah`, `baling` (BUKAN auto-increment) |
+| data | json nullable | VirtualColumn stancl — atribut custom tenant disimpan sini (cth `tenancy_db_name`) |
+| timestamps | | created_at, updated_at |
+
+**Model:** `App\Models\Tenant` (extends Stancl BaseTenant + `HasDatabase`, `HasDomains`)
+⚠️ Atribut custom (selain id/timestamps) auto masuk lajur `data` (json) — sifat VirtualColumn. `$tenant->tenancy_db_name` = nama DB tenant.
+
+### `domains` — Domain → tenant mapping (stancl)
+| Lajur | Jenis | Nota |
+|-------|-------|------|
+| id | bigint PK | |
+| domain | string unique | cth `demo.localhost`, `kedah.localhost`. TANPA http:// atau port |
+| tenant_id | string FK → tenants | cascade delete |
+| timestamps | | |
+
+> `InitializeTenancyByDomain` middleware lookup table ni pada SETIAP request domain bukan-central. 1 tenant boleh ada banyak domain (subdomain + custom domain serentak — berguna untuk strategi domain production nanti).
+
+### `cache` + `cache_locks` — Cache CENTRAL sahaja
+| Lajur | Jenis |
+|-------|-------|
+| key | string PK |
+| value | mediumText |
+| expiration | integer |
+
+(cache_locks: key, owner, expiration)
+
+### `sessions` — Session untuk domain CENTRAL
+| Lajur | Jenis | Nota |
+|-------|-------|------|
+| id | string PK | |
+| user_id | FK nullable, index | |
+| ip_address | string(45) nullable | |
+| user_agent | text nullable | |
+| payload | longText | |
+| last_activity | integer, index | |
+
+> **Migration BARU dibuat Sesi 2** (`create_sessions_table` di root migrations). Tanpa ni, central page error `relation "sessions" does not exist` sebab versi tenant terbundle dalam migration users yang dah pindah ke folder tenant/.
+
+### `migrations` — Rekod migration central (Laravel default)
+
+---
+
+## D2. TABLE TENANT DB (setiap koperasi)
+
+**= SEMUA table dalam Blueprint Database lama**, tiada perubahan struktur:
+
+- **RBAC:** users, roles, permissions, role_user, permission_role, module_role
+- **Keahlian:** members, next_of_kins, ownership_transfers
+- **Lejar:** transactions, share_transfers
+- **Pinjaman:** loans
+- **Mesyuarat:** meetings
+- **Akaun:** account_categories, account_entries
+- **Dividen:** dividend_runs, dividend_allocations, dividend_shares (+ tabung)
+- **Sistem:** settings
+- **Deprecated:** savings (⚠️ pending buang dari migration set sebelum Fasa 5)
+
+**TAMBAHAN per tenant (infra, dulu "kongsi" — sekarang SETIAP tenant ada sendiri):**
+
+| Table | Sumber migration | Nota |
+|-------|------------------|------|
+| cache + cache_locks | copy `create_cache_table` dalam tenant/ | Cache TERPISAH per tenant — `Setting::all_cached()` selamat, tiada kebocoran antara koperasi |
+| sessions | terbundle dalam `create_users_table` | Login session per tenant |
+| password_reset_tokens | terbundle dalam `create_users_table` | |
+| migrations | auto | rekod 27 migration tenant |
+
+**Kiraan:** 27 fail migration dalam `database/migrations/tenant/` (26 app + 1 cache).
+
+---
+
+## D3. MEKANISME PENGASINGAN (macam mana data tak bercampur)
+
+| Lapisan | Mekanisme |
+|---------|-----------|
+| Query Eloquent/DB | `DatabaseTenancyBootstrapper` tukar DEFAULT connection ke DB tenant — semua model app automatik hala ke DB betul, TIADA ubah code model |
+| Cache | `CACHE_STORE=database` + connection switch → table cache tenant sendiri. (`CacheTenancyBootstrapper` OFF — tak perlu) |
+| Session | `SESSION_DRIVER=database` + connection switch → table sessions tenant sendiri |
+| Storage/fail | `storage/tenant<ID>/app/public/...` — folder fizikal berasingan per tenant |
+| Paparan fail | `tenant_asset($path)` — controller stancl serve dari storage tenant SEMASA sahaja; tenant A mustahil nampak fail tenant B |
+| Akses central dari tenant route | `PreventAccessFromCentralDomains` middleware |
+
+**Cross-tenant secara sengaja (untuk admin SaaS):** `$tenant->run(fn() => ...)` atau `tenancy()->initialize($tenant)` — guna dengan SEDAR sahaja (cth command provisioning, laporan SaaS).
+
+---
+
+## D4. KONVENSYEN OPERASI DB (TENANCY)
+
+1. **Migrate:** `php artisan migrate` = CENTRAL sahaja. `php artisan tenants:migrate` = loop SEMUA tenant. Dua-dua perlu dalam rutin deploy.
+2. **Seed tenant:** auto masa cipta (pipeline SeedDatabase) atau manual `php artisan tenants:seed --tenants=<id>`. Seeder essential idempotent (selamat re-run).
+3. **Tinker dalam tenant:** `tenancy()->initialize(Tenant::find('id'))` dulu, baru query model app. Verify dengan `DB::connection()->getDatabaseName()`.
+4. **Run command artisan untuk tenant:** `php artisan tenants:run "<command>" --tenants=<id>`.
+5. **PostgreSQL user perlu hak `CREATEDB`** untuk provisioning (`ALTER USER xxx CREATEDB;`).
+6. **DROP DB tenant manual:** `tenancy()->end()` dulu (Postgres refuse drop DB dengan active connection), nama DB di-quote: `DROP DATABASE IF EXISTS "tenantxxx"`.
+7. **Half-state cleanup** (row tanpa DB / DB tanpa row): delete raw `domains` + `tenants`, DROP DATABASE — JANGAN `$tenant->delete()` (pipeline boleh fail).
+8. **Backup:** WAJIB jadi per-tenant DB (pg_dump setiap `tenant*`) + central — config spatie sedia ada belum cover ni (pending Fasa 5).
+9. Semua nota schema lama KEKAL terpakai dalam setiap tenant DB: decimal money + `wang()`, LOWER() untuk LIKE pgsql, migration order FK, audit trail "siapa buat".
+
+---
+
+## D5. CARA SAHKAN SCHEMA SEBENAR
+
+```bash
+# Central
+php artisan db:show --counts
+
+# Tenant tertentu
+php artisan tenants:run "db:show --counts" --tenants=demo
+
+# Senarai semua tenant + domain
+php artisan tenants:list
+```
+
+---
+
+*Tamat update database Sesi 2. DB tenant = Blueprint Database lama + cache/sessions per tenant. Central = 4 table infra sahaja.*
+
+
 
 *Tamat blueprint database. Untuk schema 100% tepat, semak fail `database/migrations/` atau `php artisan db:show`.*
 
