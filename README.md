@@ -345,6 +345,71 @@ php artisan optimize
 5. **[BACKUP]** spatie/laravel-backup masih config single-DB — perlu jadi per-tenant (loop tenants / pg_dump per DB). Bincang Fasa 5.
 6. **[STORAGE BALING]** Foto/logo/avatar Baling sedia ada perlu PINDAH ke `storage/tenantbaling/app/public/` masa migrate.
 
+# UPDATE BLUEPRINT — SESI 2.5 (12 Jun 2026, malam)
+
+> Tampal dokumen ini BERSAMA blueprint utama di awal sesi baru.
+> Sesi ini: fix cache leak antara tenant + settle pending 9.9 #1-#4.
+> Semua perubahan code DAH commit & push ke repo v2 (koperasicms-with-tenant).
+
+---
+
+## 1. STATUS PENDING 9.9 (SEMUA #1-#4 SELESAI ✅)
+
+| # | Item | Keputusan / Hasil |
+|---|------|-------------------|
+| 1 | Parity gap `jobs` | ✅ SELESAI — Production pun TIADA table jobs, grep sahkan ZERO kod guna queue. `.env` dev dah tukar `QUEUE_CONNECTION=sync`. ⚠️ `.env` production v2 nanti WAJIB sync jugak (masuk checklist Fasa 5) |
+| 2 | Parity check schema | ✅ LULUS PENUH — diff column-level Baling production vs tenantkpmbb (fresh v2): **IDENTICAL 214=214 baris** (table+column+type). Kaveat: index/default/FK detail tak dibanding (risiko rendah). Fail rujukan: `~/koperasicmsv2/baling_schema.sql`, `v2_schema.sql`, `baling_cols.txt`, `v2_cols.txt` |
+| 3 | Buang savings | ✅ SELESAI — `git rm` 4 item: migration `0001_01_01_000006_create_savings_table.php`, `app/Models/Saving.php`, `app/Http/Controllers/SavingController.php`, `resources/views/simpanan/` (2 blade). Verified: tenant ujian baru = **24 table, tiada savings**, route:list OK. ⚠️ JANGAN sentuh `Events\SavingTenant` / `SavingDomain` dalam TenancyServiceProvider — itu event stancl, bukan modul savings! |
+| 4 | Strategi domain | ✅ KEPUTUSAN: **Subdomain wildcard** `*.koperasicms.site` (default) + custom domain optional kemudian (stancl support multi-domain per tenant). DNS pindah ke **Cloudflare** (free, nameserver sahaja — domain kekal Namecheap). SSL = wildcard Let's Encrypt via DNS-01 + plugin `dns-cloudflare`. Status execution: **TERGANTUNG** — Cloudflare dashboard DOWN (incident 12 Jun 10:27PM GMT+8) masa nak add site. SAMBUNG: add site → tukar nameserver Namecheap → 3 rekod A (`@`, `*`, `www` → IP VPS, semua DNS-only/kelabu dulu) → API token (Zone:DNS:Edit) untuk certbot |
+
+**Struktur domain production yang dipersetujui:**
+```
+koperasicms.site / www      → CENTRAL (landing SaaS)
+baling.koperasicms.site     → tenant Baling
+<id>.koperasicms.site       → tenant lain (auto via wildcard)
+```
+
+---
+
+## 2. GOTCHA BARU — TAMBAH KE 9.8
+
+**#12 — CACHE LEAK: pengasingan cache via connection switch TAK percuma untuk web request!**
+Laravel memoize cache store SEKALI per request. Kalau store ter-resolve sebelum tenancy init, dia terikat ke connection CENTRAL sampai habis request — cache SEMUA tenant masuk satu table cache central. Simptom: settings/tema satu tenant "berjangkit" ke tenant lain (`Setting::all_cached()` baca periuk sama). DB sebenar TIDAK bocor.
+**FIX (DAH APPLY + commit):** `Cache::forgetDriver(config('cache.default'))` pada event `TenancyInitialized` + `TenancyEnded`, didaftar di hujung `TenancyServiceProvider::boot()` (selepas bootEvents → jalan selepas BootstrapTenancy/connection switch).
+**Cara diagnose:** `DB::table('cache')->pluck('key')` di central vs setiap tenant — tengok cache key duduk DB mana.
+**Verified:** cache `settings.all` kini duduk dalam table cache tenant masing-masing; ujian browser tukar setting kpmbb → kopetro TAK terjejas.
+
+**Kemaskini jadual D3 (baris Cache):** `CACHE_STORE=database` + connection switch + **WAJIB forgetDriver pada TenancyInitialized/Ended (gotcha 9.8 #12)**. CacheTenancyBootstrapper kekal OFF. Ayat "pengasingan cache datang PERCUMA" dalam 9.2 = SALAH separuh, rujuk gotcha ni.
+
+---
+
+## 3. PEMBETULAN / FAKTA BARU BLUEPRINT
+
+1. **Table waris = `next_of_kin` (SINGULAR)** — blueprint tulis `next_of_kins`, yang betul singular (sahkan dari schema production & v2).
+2. **Module key route lejar = `simpanan_saham`** (routes/app.php line 113), bukan `lejar_transaksi` macam dalam blueprint. BELUM verify config/modules.php — sahkan dengan `grep simpanan_saham config/modules.php` bila sempat. Bukan blocker.
+3. **STATUS PRODUCTION SEBENAR: masih TESTING** — www.koperasicms.site belum ada ahli aktif yang bergantung harian. Implikasi BESAR untuk Fasa 5: risiko/tekanan downtime jauh berkurang, boleh **rehearse migrate 2 kali** (kali 1 latihan, reset, kali 2 ikut runbook diperhalusi). Kerumitan "siapa dapat www" pun hilang — www terus jadi central.
+4. **⚠️ SECURITY:** password DB production = `123456` (user `baseri`, db `koperasi`). pgsql bind 127.0.0.1 (tak terdedah terus) TAPI **WAJIB tukar ke password kuat sebelum Fasa 5** — selaras dengan `.env` + restart. Masuk checklist.
+5. **Periuk api Fasa 5 — table `migrations`:** pg_dump Baling bawa rekod migration dengan NAMA LAMA; v2 migration dah direnumber. Lepas restore jadi `tenantbaling`, `tenants:migrate` akan cuba run migration v2 atas table sedia ada → meletup. **Plan: lepas import, sync table migrations** (truncate + insert nama fail migration v2 sebagai "dah run"). Perlu masuk runbook Fasa 5.
+6. Tenant dev semasa: `demo`, `kedah`, `kpmbb`, `kopetro`. Tenant ujian `ujiansavings` dah dicuci (SOP: delete raw domains+tenants, DROP DATABASE).
+7. Dev tenant lama (kpmbb/kopetro/demo/kedah) masih ADA table `savings` + rekod migration fail yang dah dipadam — tak harmful, Laravel tolerate. Tenant baru selepas commit ni = 24 table bersih.
+8. Extension `intl` tiada di PHP dev — `db:show` error kosmetik bahagian format saiz. Optional: `sudo apt install php8.4-intl`.
+9. VPS provider: Cloudzy(?) — domain di Namecheap. Username pgsql dev = `baseri` jugak (connect guna `-h 127.0.0.1` + password, peer auth gagal sebab OS user `muham`).
+
+---
+
+## 4. NEXT / SAMBUNGAN (ikut turutan)
+
+1. **[SAMBUNG] Cloudflare DNS** — tunggu incident pulih → add site `koperasicms.site` → plan Free → tukar nameserver di Namecheap → rekod A `@`/`*`/`www` → IP VPS (DNS-only kelabu) → tunggu zone Active.
+2. **[SERVER] Wildcard SSL** — create Cloudflare API token (Zone:DNS:Edit, zone ni sahaja) → pasang certbot + plugin dns-cloudflare di VPS → issue cert `*.koperasicms.site` + `koperasicms.site` → auto-renew test.
+3. **[#5] Checklist test isolation menyeluruh** — belum draft. Cakupan minimum: session login cross-tenant, storage/fail (`tenant_asset`), cache (dah lulus hari ni), route central vs tenant, data CRUD cross-check, queue (sync — N/A).
+4. **[FASA 5] Runbook penuh** — guna rangka 9.10 + tambahan sesi ni: sync table migrations (#5 atas), tukar password DB production, QUEUE sync di .env production, drop table savings dalam tenantbaling lepas import, nginx 2 server block (central + wildcard), strategi rehearse 2x.
+5. **[KEKAL PENDING]** Bug MeetingController `'admin'`→`'admin-koperasi'`; backup spatie per-tenant; Google Drive credentials.
+
+---
+
+*Mula sesi baru dengan: "sambung dari Update Sesi 2.5" — terus ke item Next #1 (Cloudflare) atau #3 (checklist isolation) ikut keadaan.*
+
+
 ### 9.10 FASA 5 — RANGKA (Sesi 3)
 
 > Fasa paling berisiko: production + data sebenar ~1000 ahli + downtime window. JANGAN mula tanpa plan penuh + backup verified.
