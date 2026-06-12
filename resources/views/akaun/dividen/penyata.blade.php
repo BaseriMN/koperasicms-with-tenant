@@ -47,7 +47,7 @@
         <div class="head">
             <div class="logo">
                 @if ($logoPath)
-                    <img src="{{ asset('storage/' . $logoPath) }}" alt="Logo">
+                    <img src="{{ tenant_asset($logoPath) }}" alt="Logo">
                 @else
                     {{ strtoupper(substr($namaKoperasi, 0, 1)) }}
                 @endif

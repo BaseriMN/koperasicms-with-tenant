@@ -18,7 +18,7 @@
                 <div style="display:flex;gap:18px;align-items:center;margin-bottom:20px;">
                     <div style="width:74px;height:74px;border-radius:50%;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,var(--teal),var(--teal-deep));display:grid;place-items:center;color:#fff;font-size:28px;font-weight:600;">
                         @if ($user->avatar_path)
-                            <img src="{{ asset('storage/' . $user->avatar_path) }}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;">
+                            <img src="{{ tenant_asset($user->avatar_path) }}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;">
                         @else
                             {{ strtoupper(substr($user->name, 0, 1)) }}
                         @endif

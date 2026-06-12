@@ -55,7 +55,7 @@
                 <div style="text-align:center;">
                     <div class="logo-preview">
                         @if ($current['logo_path'])
-                            <img src="{{ asset('storage/' . $current['logo_path']) }}" alt="Logo">
+                            <img src="{{ tenant_asset($current['logo_path']) }}" alt="Logo">
                         @else
                             {{ strtoupper(substr($current['nama_pendek'] ?: 'K', 0, 1)) }}
                         @endif

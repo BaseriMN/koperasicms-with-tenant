@@ -21,7 +21,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Dashboard') — {{ $namaKoperasi }}</title>
     @if (!empty($logoPath))
-        <link rel="icon" type="image/png" href="{{ asset('storage/' . $logoPath) }}">
+        <link rel="icon" type="image/png" href="{{ tenant_asset($logoPath) }}">
     @endif
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -292,7 +292,7 @@
             <div class="brand">
             @if ($logoPath)
                 <div class="mark" style="background:#fff;padding:4px;overflow:hidden;">
-                    <img src="{{ asset('storage/' . $logoPath) }}" alt="Logo" style="width:100%;height:100%;object-fit:contain;">
+                    <img src="{{ tenant_asset($logoPath) }}" alt="Logo" style="width:100%;height:100%;object-fit:contain;">
                 </div>
             @else
                 <div class="mark">{{ strtoupper(substr($namaPendek, 0, 1)) }}</div>
@@ -442,7 +442,7 @@
                 @php $cu = auth()->user(); @endphp
                 <div class="avatar" style="overflow:hidden;">
                     @if ($cu && $cu->avatar_path)
-                        <img src="{{ asset('storage/' . $cu->avatar_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
+                        <img src="{{ tenant_asset($cu->avatar_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
                     @else
                         {{ strtoupper(substr($cu->name ?? 'U', 0, 1)) }}
                     @endif
@@ -487,7 +487,7 @@
                     <button @click="buka = !buka" style="border:none;background:none;cursor:pointer;padding:0;border-radius:50%;">
                         <div class="avatar" title="{{ $cu->name ?? '' }}" style="overflow:hidden;">
                             @if ($cu && $cu->avatar_path)
-                                <img src="{{ asset('storage/' . $cu->avatar_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
+                                <img src="{{ tenant_asset($cu->avatar_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
                             @else
                                 {{ strtoupper(substr($cu->name ?? 'U', 0, 1)) }}
                             @endif

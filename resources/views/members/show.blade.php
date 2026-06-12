@@ -7,7 +7,7 @@
     <div style="display:flex;align-items:center;gap:16px;">
         <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,var(--teal),var(--teal-deep));display:grid;place-items:center;color:#fff;font-size:28px;font-weight:600;">
             @if ($member->foto_path)
-                <img src="{{ asset('storage/' . $member->foto_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
+                <img src="{{ tenant_asset($member->foto_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
             @else
                 {{ strtoupper(substr($member->nama, 0, 1)) }}
             @endif

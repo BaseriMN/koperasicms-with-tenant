@@ -59,7 +59,7 @@
                         <div class="cell-main">
                             <div class="av" style="overflow:hidden;">
                                 @if ($m->foto_path)
-                                    <img src="{{ asset('storage/' . $m->foto_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
+                                    <img src="{{ tenant_asset($m->foto_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
                                 @else
                                     {{ strtoupper(substr($m->nama, 0, 1)) }}
                                 @endif

@@ -50,7 +50,7 @@
             <div style="display:flex;gap:14px;align-items:center;">
                 <div style="width:64px;height:64px;border-radius:50%;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,var(--teal),var(--teal-deep));display:grid;place-items:center;color:#fff;font-size:24px;font-weight:600;">
                     @if (!empty($m) && $m->foto_path)
-                        <img src="{{ asset('storage/' . $m->foto_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
+                        <img src="{{ tenant_asset($m->foto_path) }}" alt="" style="width:100%;height:100%;object-fit:cover;">
                     @else
                         {{ strtoupper(substr($m->nama ?? 'A', 0, 1)) }}
                     @endif

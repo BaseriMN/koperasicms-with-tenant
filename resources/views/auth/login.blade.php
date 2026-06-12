@@ -67,7 +67,7 @@
 <div class="hero-brand">
             @if ($logoPath)
                 <div class="mark" style="background:#fff;padding:4px;overflow:hidden;">
-                    <img src="{{ asset('storage/' . $logoPath) }}" alt="Logo" style="width:100%;height:100%;object-fit:contain;">
+                    <img src="{{ tenant_asset($logoPath) }}" alt="Logo" style="width:100%;height:100%;object-fit:contain;">
                 </div>
             @else
                 <div class="mark">{{ strtoupper(substr($namaPendek, 0, 1)) }}</div>
