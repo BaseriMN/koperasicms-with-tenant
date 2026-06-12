@@ -251,7 +251,7 @@ SATU CODE BASE (1 repo)
 - **Pengenalan tenant:** domain (table `domains`).
 - **Tenant sedia ada (dev):** `demo` → demo.localhost, `kedah` → kedah.localhost.
 - **Update code:** `git pull` → SEMUA tenant dapat serta-merta. Migration jadi 2 step (lihat 9.7).
-- **Driver `.env`:** `SESSION_DRIVER / CACHE_STORE / QUEUE_CONNECTION = database` — pengasingan cache & session datang PERCUMA via connection switch (DatabaseTenancyBootstrapper tukar default connection → cache/session store ikut sekali).
+- **Driver `.env`:** `SESSION_DRIVER / CACHE_STORE / QUEUE_CONNECTION = database` — pengasingan cache & session datang PERCUMA cache: lihat gotcha 9.8 #12 via connection switch (DatabaseTenancyBootstrapper tukar default connection → cache/session store ikut sekali). 
 
 ### 9.3 Fail Penting & Perubahan
 
@@ -321,6 +321,20 @@ php artisan optimize
 9. **Tinker: paste SATU line, tunggu hasil, baru line seterusnya.** Multi-line paste tersangkut/terpotong.
 10. **`$tenant->run(closure)`** = jalankan code "dalam" tenant (initialize → execute → end). Berguna untuk set setting per tenant dari central context.
 11. **`tenancy()->end()` sebelum DROP DATABASE** — PostgreSQL refuse drop DB yang ada active connection.
+12. **CACHE LEAK — pengasingan cache via connection switch TAK percuma untuk web request!**
+    Laravel memoize cache store SEKALI per request. Kalau store ter-resolve sebelum
+    tenancy init (framework/middleware/vendor), dia terikat ke connection CENTRAL
+    sampai habis request — cache SEMUA tenant masuk satu table cache central
+    (simptom: settings/tema satu tenant "berjangkit" ke tenant lain, sebab
+    `Setting::all_cached()` baca periuk yang sama). DB sebenar TIDAK bocor.
+    **FIX (dah apply):** `Cache::forgetDriver(config('cache.default'))` pada event
+    `TenancyInitialized` + `TenancyEnded` dalam TenancyServiceProvider::boot()
+    (selepas makeTenancyMiddlewareHighestPriority). Listener didaftar SELEPAS
+    bootEvents() supaya jalan selepas BootstrapTenancy (connection switch dulu,
+    baru re-bind cache).
+    **Cara diagnose:** `DB::table('cache')->pluck('key')` di central vs dalam
+    setiap tenant — tengok cache key duduk DB mana. (Ditemui Sesi 2.5, tenant
+    test kpmbb + kopetro.)
 
 ### 9.9 PENDING KHUSUS TENANCY (sebelum/semasa Fasa 5)
 
@@ -491,7 +505,7 @@ Langkah kasar (akan diperhalusi awal Sesi 3):
 | Lapisan | Mekanisme |
 |---------|-----------|
 | Query Eloquent/DB | `DatabaseTenancyBootstrapper` tukar DEFAULT connection ke DB tenant — semua model app automatik hala ke DB betul, TIADA ubah code model |
-| Cache | `CACHE_STORE=database` + connection switch → table cache tenant sendiri. (`CacheTenancyBootstrapper` OFF — tak perlu) |
+| Cache | `CACHE_STORE=database` + connection switch + **WAJIB forgetDriver pada TenancyInitialized/Ended** (gotcha 9.8 #12 — tanpa ni cache bocor ke central). `CacheTenancyBootstrapper` kekal OFF |
 | Session | `SESSION_DRIVER=database` + connection switch → table sessions tenant sendiri |
 | Storage/fail | `storage/tenant<ID>/app/public/...` — folder fizikal berasingan per tenant |
 | Paparan fail | `tenant_asset($path)` — controller stancl serve dari storage tenant SEMASA sahaja; tenant A mustahil nampak fail tenant B |
