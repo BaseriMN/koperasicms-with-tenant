@@ -5,7 +5,7 @@
 @section('content')
 <div class="page-head">
     <div><h1>Permohonan Pinjaman</h1><p class="lead">Mohon pinjaman baharu atau semak permohonan sedia ada.</p></div>
-    @if (auth()->user()->hasAnyRole(['kerani', 'pengurus', 'admin', 'super-user']))
+    @if (auth()->user()->hasAnyRole(['kerani', 'pengurus', 'admin-koperasi', 'super-user']))
         <a href="{{ route('pinjaman.create') }}" class="btn btn-gold">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             Mohon Pinjaman
