@@ -2615,3 +2615,214 @@ rclone ls gdrive:Koperasi_ServerBackups | tail -5
 ---
 
 *Tamat README induk. Sesi seterusnya: mula dengan **Fasa C** (Kemas & Kunci) — keutamaan C6 (deploy code) + C2 (test restore backup) + C3 (bug MeetingController).*
+
+
+# PATCH README INDUK — SESI 4 (14 Jun 2026)
+
+> Apply setiap blok CARI/TUKAR ke README induk. Disusun ikut seksyen.
+> Ringkasan Sesi 4: C6 + C2 + C3 + C7 SELESAI + ciri baru auto-mampat imej.
+
+═══════════════════════════════════════════════════════════════════
+PATCH 1 — Header versi (atas sekali)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+> Bahasa: Melayu Malaysia. Versi terakhir dikemaskini: **akhir Sesi 3 (13 Jun 2026)**.
+
+TUKAR:
+> Bahasa: Melayu Malaysia. Versi terakhir dikemaskini: **akhir Sesi 4 (14 Jun 2026)**.
+
+═══════════════════════════════════════════════════════════════════
+PATCH 2 — §0 Stack teknikal (tambah Intervention Image)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+| Frontend | Blade + Alpine.js |
+
+TUKAR:
+| Frontend | Blade + Alpine.js |
+| Imej | Intervention Image v4 (4.1.3) + ext-gd (auto-mampat upload → WebP) |
+
+═══════════════════════════════════════════════════════════════════
+PATCH 3 — §1 Status semasa (kemas kini hutang)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+### Hutang/pending utama (lihat §10 untuk senarai penuh)
+- ⏳ Deploy code terbaru ke server (commit `bootstrap/app.php` trustProxies belum `git pull`).
+- ⏳ Fix `config/tenancy.php` `--force` (seed production) — masih guna jalan tengah.
+- ⏳ Hutang #2 DNS sudah **SELESAI** (record redundant dipadam).
+
+TUKAR:
+### Hutang/pending utama (lihat §10 untuk senarai penuh)
+- ✅ Deploy code (trustProxies + `--force`) — SELESAI Sesi 4 (C6).
+- ✅ Fix `config/tenancy.php` `--force` — SELESAI Sesi 4 (uncomment line 201, push, pull).
+- ✅ Backup rosak (kosong sejak ~7 Jun) — dijumpai & dibaiki Sesi 4 (C2).
+- ✅ Bug slug role `'admin'` — dibaiki di `pinjaman/index.blade.php` Sesi 4 (C3).
+- ✅ DB sampah `koperasi` — dipadam Sesi 4 (C7).
+- ⏳ Polish baki: rotation backup, logrotate, padam fail backup 215-byte lama di Drive (C5/C8).
+
+═══════════════════════════════════════════════════════════════════
+PATCH 4 — §1 Roadmap (tanda C selesai sebahagian)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+```
+A ✅ → B ✅ → C → E → F
+(Fasa D — Migrate Baling — DIPADAM, tiada data Baling sebenar)
+```
+
+TUKAR:
+```
+A ✅ → B ✅ → C (teras siap, tinggal polish) → E → F
+(Fasa D — Migrate Baling — DIPADAM, tiada data Baling sebenar)
+```
+
+═══════════════════════════════════════════════════════════════════
+PATCH 5 — §3 Gotcha #1 (bug MeetingController dah SALAH lokasi)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+1. **Slug role = `admin-koperasi`, BUKAN `admin`** — punca #1 bug akses. (Bug pending: MeetingController `$canCreate` masih guna `'admin'` — perlu fix.)
+
+TUKAR:
+1. **Slug role = `admin-koperasi`, BUKAN `admin`** — punca #1 bug akses. (Sesi 4: MeetingController sebenarnya DAH betul; bug sebenar di `resources/views/pinjaman/index.blade.php` — dah dibaiki. Sapuan `grep -rn "'admin'"` confirm takde lagi.)
+
+═══════════════════════════════════════════════════════════════════
+PATCH 6 — §3 Gotcha baru (tambah selepas gotcha #8 composer dump-autoload)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+8. **`composer dump-autoload`** lepas edit `helpers.php`.
+
+TUKAR:
+8. **`composer dump-autoload`** lepas edit `helpers.php`.
+9. **Upload imej auto-mampat** — guna helper `simpan_imej_mampat($fail, $folder)` (resize 600px + WebP), JANGAN `->store()` mentah. Output sentiasa `.webp` nama random. Gambar lama kekal format asal (OK, tetap papar).
+10. **Intervention Image v4 ≠ v3 API** — guna `$manager->decode($path)`, `$imej->scaleDown(w,h)`, `$imej->encode(new WebpEncoder(quality:N))`. BUKAN `read()`/`toWebp()` (itu v3, akan error "undefined method").
+11. **GD extension** — server VPS dah ada; mesin local (WSL) kena `sudo apt install php8.4-gd`. Kalau `dpkg interrupted` → `sudo dpkg --configure -a` dulu.
+
+═══════════════════════════════════════════════════════════════════
+PATCH 7 — §5 Real IP (trustProxies) — tanda selesai
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+- **App side:** `bootstrap/app.php` set `$middleware->trustProxies(at: '*', headers: X_FORWARDED_FOR|HOST|PORT|PROTO)`. Commit dah di GitHub, **belum pull ke server**.
+
+TUKAR:
+- **App side:** `bootstrap/app.php` set `$middleware->trustProxies(at: '*', headers: X_FORWARDED_FOR|HOST|PORT|PROTO)`. **SELESAI deploy ke server Sesi 4 (C6).**
+
+═══════════════════════════════════════════════════════════════════
+PATCH 8 — §5 Backup automatik (REKA SEMULA — bahagian PALING PENTING)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+### Backup automatik (`/home/baseri/scripts/db_backup.py`)
+- Cron: `0 2 * * *` (setiap hari 2 pagi) + `* * * * * schedule:run`.
+- **Direka semula Sesi 3:** baca credential dari `.env` Laravel (satu sumber kebenaran) — BUKAN hardcode password lagi.
+- `ENV_FILE = /home/baseri/projek/koperasicms-with-tenant/.env`.
+- `pg_dumpall` semua DB → gzip → `rclone move` ke Google Drive `gdrive:Koperasi_ServerBackups`.
+- Permission: script `700`, `.env` `640`.
+- ⚠️ Belum ada: rotation backup, notifikasi gagal, logrotate untuk `backup.log`.
+- ⚠️ Backup belum pernah **di-restore-test** (Fasa C2).
+
+TUKAR:
+### Backup automatik (`/home/baseri/scripts/db_backup.py`)
+- Cron: `0 2 * * *` (setiap hari 2 pagi) + `* * * * * schedule:run`.
+- `ENV_FILE = /home/baseri/projek/koperasicms-with-tenant/.env` (baca credential dari .env, satu sumber kebenaran).
+- **⚠️ REKA SEMULA Sesi 4 (C2) — PENEMUAN BESAR:** backup lama guna `pg_dumpall` GAGAL SENYAP sejak ~7 Jun (semua fail 215 bytes = KOSONG). Punca: `pg_dumpall` baca `pg_authid` (superuser-only) tapi `baseri` non-superuser → mati awal; bug pipe `| gzip` telan error (exit code gzip, bukan pg_dumpall) → cron lapor "berjaya" tiap hari.
+- **Versi baru:** `pg_dump` PER-DB (tak sentuh `pg_authid`, non-superuser OK) + auto-detect senarai DB + tangkap exit code pg_dump SEBENAR + guard saiz (<500 bytes = gagal) + all-or-nothing (gagal → tak upload + exit 1).
+- Output: satu fail per-DB dalam folder bertarikh `gdrive:Koperasi_ServerBackups/<timestamp>/`.
+- **Restore TERBUKTI Sesi 4:** restore tenantujian1 ke DB temp, row count padan 9/9 table. Backup hidup balik.
+- Permission: script `700`, `.env` `640`.
+- ⚠️ Belum ada: rotation backup, notifikasi gagal, logrotate `backup.log`, padam 8 fail 215-byte lama di Drive (C5).
+
+═══════════════════════════════════════════════════════════════════
+PATCH 9 — §5 Database PostgreSQL (kemas — DB koperasi dah padam)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+- DB sedia ada: `koperasi_tenant` (central), `tenantujian1`, `tenantujian2` — owner `baseri`.
+- DB `koperasi` (lama, kosong, sampah) — owner `postgres`, **belum dipadam** (boleh padam bila-bila).
+
+TUKAR:
+- DB sedia ada: `koperasi_tenant` (central), `tenantujian1`, `tenantujian2` — owner `baseri`.
+- DB `koperasi` (sampah, owner `postgres`) — **SELESAI DIPADAM Sesi 4 (C7)**. Rupanya ada 25 table schema LAMA (termasuk `savings` pra-removal) tapi 0 data sebenar (cuma 1 super-user seed). README §5 lama silap kata "kosong owned postgres" — kini moot.
+
+═══════════════════════════════════════════════════════════════════
+PATCH 10 — §8 FASA C (tanda C2/C3/C6/C7 selesai)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+- **C2.** Backup + **VERIFIED restore** — separuh: backup berfungsi ✅, tapi belum pernah test restore. *"Backup yang tak pernah di-restore = bukan backup."* Perlu: restore ke DB temp, banding kiraan row.
+- **C3.** Bug MeetingController `'admin'` → `'admin-koperasi'` (5 minit, commit).
+
+TUKAR:
+- **C2.** ✅ **SELESAI Sesi 4** — backup lama ROSAK (kosong), direka semula (pg_dump per-DB), restore terbukti 9/9 table padan. Lihat §5.
+- **C3.** ✅ **SELESAI Sesi 4** — bug sebenar di `pinjaman/index.blade.php` (BUKAN MeetingController), `'admin'` → `'admin-koperasi'`.
+
+CARI:
+- **C6 (baru).** Deploy code terbaru ke server: `git pull` (`bootstrap/app.php` trustProxies + `config/tenancy.php` `--force`).
+- **C7 (baru).** Padam DB sampah `koperasi`.
+
+TUKAR:
+- **C6.** ✅ **SELESAI Sesi 4** — git pull (trustProxies + `--force`), `cuci`, app verified hidup via CF. Set `git config core.fileMode false` (elak noise permission public/*).
+- **C7.** ✅ **SELESAI Sesi 4** — DB sampah `koperasi` dipadam (`sudo -u postgres ... DROP DATABASE koperasi WITH (FORCE)`).
+
+═══════════════════════════════════════════════════════════════════
+PATCH 11 — §10 Hutang (pindah item ke SELESAI)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+### Code (dalam repo — perlu local→push→pull)
+- ⏳ **`bootstrap/app.php`** — trustProxies dah commit di GitHub, **belum `git pull` ke server**.
+- ⏳ **`config/tenancy.php`** — `--force` masih dikomen (line ~201). Punca seed gagal di production (prompt "Application In Production"). Sekarang guna jalan tengah `tenants:seed --tenants=X --force`. **Fix kekal:** uncomment `--force` → push → pull. Tenant baru lepas tu auto-seed betul.
+- ⏳ Bug MeetingController `'admin'` → `'admin-koperasi'` (C3).
+
+TUKAR:
+### Code (dalam repo — perlu local→push→pull)
+- ✅ **`bootstrap/app.php`** — trustProxies SELESAI deploy (Sesi 4 C6).
+- ✅ **`config/tenancy.php`** — `--force` line 201 SELESAI uncomment + deploy (Sesi 4 C6). Tenant baru auto-seed betul sekarang.
+- ✅ Bug slug `'admin'` di `pinjaman/index.blade.php` (Sesi 4 C3).
+
+CARI:
+### Server-only
+- ⏳ Padam DB sampah `koperasi` (C7).
+- ⏳ Test restore backup (C2).
+
+TUKAR:
+### Server-only
+- ✅ Padam DB sampah `koperasi` (Sesi 4 C7).
+- ✅ Test restore backup + baiki backup rosak (Sesi 4 C2).
+
+═══════════════════════════════════════════════════════════════════
+PATCH 12 — §10 SELESAI (tambah blok Sesi 4)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+### SELESAI Sesi 3
+- ✅ Hutang #1 (Real IP) — trustProxies + firewall.
+
+TUKAR:
+### SELESAI Sesi 4
+- ✅ C6 deploy (trustProxies + `--force`), C2 baiki+test backup, C3 bug slug, C7 padam DB sampah.
+- ✅ Ciri BARU: auto-mampat imej upload (Intervention Image v4 + GD, resize 600px → WebP). 3 tempat: ProfileController (avatar) + MemberController store/update (foto).
+
+### SELESAI Sesi 3
+- ✅ Hutang #1 (Real IP) — trustProxies + firewall.
+
+═══════════════════════════════════════════════════════════════════
+PATCH 13 — §14 Logik perniagaan (tambah helper imej baru)
+═══════════════════════════════════════════════════════════════════
+
+CARI:
+- **`pinjaman_aktif(): bool`** — toggle produk pinjaman (Setting `produk_pinjaman` === '1').
+- ⚠️ WAJIB `composer dump-autoload` selepas edit helpers.php.
+
+TUKAR:
+- **`pinjaman_aktif(): bool`** — toggle produk pinjaman (Setting `produk_pinjaman` === '1').
+- **`simpan_imej_mampat($fail, $folder, $maxSisi=600, $kualiti=85): string`** — resize imej upload (sisi terpanjang max 600px, kekal ratio, tak besarkan) + convert WebP + simpan ke disk public (ter-scope tenant). Pulang path `.webp`. Guna ganti `->store()` untuk semua upload avatar/foto.
+- ⚠️ WAJIB `composer dump-autoload` selepas edit helpers.php.
+
+═══════════════════════════════════════════════════════════════════
+TAMAT PATCH SESI 4
+═══════════════════════════════════════════════════════════════════
