@@ -989,4 +989,431 @@ php artisan tenants:list
 
 ---
 
+
 *Tamat blueprint. Sesi 3: mula dengan "jom plan Fasa 5" — settle 9.9 dulu sebelum sentuh production. Untuk schema 100% tepat, semak `database/migrations/tenant/` atau `php artisan tenants:run "db:show" --tenants=demo`.*
+
+
+
+# KoperasiCMS — Blueprint Induk & Roadmap (Master README)
+
+> **Dokumen tunggal sumber kebenaran (single source of truth).**
+> Tampal dokumen ini di awal setiap sesi baru. Mula sesi dengan: *"sambung dari README induk"*.
+> Bahasa: Melayu Malaysia. Versi terakhir dikemaskini: **akhir Sesi 3 (13 Jun 2026)**.
+
+---
+
+## 0. RINGKASAN PROJEK
+
+**KoperasiCMS** — sistem pengurusan koperasi yang sedang ditransformasi daripada aplikasi single-koperasi kepada **platform SaaS multi-tenant**.
+
+- **Asal:** sistem untuk Koperasi Perniagaan Melayu Baling (KPMBB), ~1000 ahli, koperasi berasaskan **SAHAM** (modul simpanan toggle OFF).
+- **Matlamat:** SaaS multi-tenant — satu code base, banyak koperasi, data setiap koperasi terasing sepenuhnya (DB-per-tenant).
+- **Model bisnes:** onboard banyak koperasi (subdomain sendiri), tier/plan, suspend, billing.
+
+### Stack teknikal
+| Lapisan | Teknologi |
+|---|---|
+| Framework | Laravel 12 (12.61.0) |
+| PHP | 8.4 |
+| Database | PostgreSQL 16.14 |
+| Multi-tenancy | stancl/tenancy v3.10 (DB-per-tenant, kenal via domain) |
+| Frontend | Blade + Alpine.js |
+| Web server | nginx 1.24.0 (Ubuntu 24.04) |
+| Reverse proxy / SSL / DNS | Cloudflare (proxy + Origin cert) |
+| Backup | pg_dumpall + rclone → Google Drive (cron harian 2 pagi) |
+
+### Persekitaran
+| Env | Lokasi | Nota |
+|---|---|---|
+| **Local (dev)** | `~/koperasicmsv2` (Windows/WSL `muham@BASERIMN`) | Mesin pembangunan |
+| **Server (production)** | VPS `216.126.236.127`, `baseri@ubuntu-Utah-1gb`, path `/home/baseri/projek/koperasicms-with-tenant` | Ubuntu 24.04, SSH port **2234** |
+| **Repo** | GitHub `BaseriMN/koperasicms-with-tenant` (branch `main`) | repo v2 = THE code base |
+
+### Struktur domain (production)
+```
+koperasicms.site / www      → CENTRAL (landing SaaS + panel admin — belum bina)
+<id>.koperasicms.site       → tenant (auto via wildcard *)
+```
+- DNS di **Cloudflare** (nameserver `alina` + `mike.ns.cloudflare.com`), domain didaftar di Namecheap.
+- Wildcard `*.koperasicms.site` → semua subdomain tenant auto-resolve (tak perlu tambah DNS record setiap onboard).
+
+---
+
+## 1. STATUS SEMASA (akhir Sesi 3)
+
+### Yang dah SIAP & verified
+- ✅ **Fasa 1–4** (dev): central DB + tenant DB, routing domain, auto-seed, storage per-tenant (`tenant_asset()`), command `tenant:cipta` dengan auto-cleanup.
+- ✅ **Fasa A — Verify Deployment** (Sesi 3): server diverifikasi penuh (lihat §6).
+- ✅ **Fasa B — Test Isolation 15/15 LULUS** (Sesi 3): sistem terbukti selamat untuk multi-koperasi (lihat §7).
+- ✅ Cloudflare DNS + SSL (Proxy + Origin cert + Full strict).
+- ✅ Firewall UFW (443 hanya dari range Cloudflare).
+- ✅ Backup harian berfungsi (pg_dumpall → Google Drive).
+
+### Tenant aktif sekarang
+- `ujian1`, `ujian2` (tenant ujian — boleh cuci bila-bila ikut SOP §11).
+- Tenant lama `kpmbb`, `kpkbaling`, `demo`, `kedah`, `kopetro` — **semua dah dipadam/sampah testing**, tiada data sebenar.
+
+### Hutang/pending utama (lihat §10 untuk senarai penuh)
+- ⏳ Deploy code terbaru ke server (commit `bootstrap/app.php` trustProxies belum `git pull`).
+- ⏳ Fix `config/tenancy.php` `--force` (seed production) — masih guna jalan tengah.
+- ⏳ Hutang #2 DNS sudah **SELESAI** (record redundant dipadam).
+
+### Roadmap (urutan mutlak — JANGAN langkau)
+```
+A ✅ → B ✅ → C → E → F
+(Fasa D — Migrate Baling — DIPADAM, tiada data Baling sebenar)
+```
+
+---
+
+## 2. KEPUTUSAN SENI BINA (locked-in)
+
+1. **DB-per-tenant**, kenal tenant **via domain** (stancl/tenancy). Central DB = `koperasi_tenant`.
+2. **Subdomain wildcard** `*.koperasicms.site` (default) + custom domain optional kemudian (stancl support multi-domain per tenant).
+3. **SSL strategi = Cloudflare Proxy + Origin Certificate** (BUKAN certbot Let's Encrypt). Lihat §5.
+4. **Suspend ≠ Delete** — data tenant TIDAK pernah dipadam sebab tak bayar; pintu dikunci sahaja.
+5. **Wang = `decimal`** + helper `wang()` (elak float bug). Audit "siapa buat" pada setiap tindakan kritikal.
+6. **White-label + module toggle** dikawal via `settings` per-tenant (bukan struktur DB).
+
+---
+
+## 3. GOTCHA & PERATURAN KRITIKAL (jangan lupa)
+
+### Gotcha pengaturcaraan
+1. **Slug role = `admin-koperasi`, BUKAN `admin`** — punca #1 bug akses. (Bug pending: MeetingController `$canCreate` masih guna `'admin'` — perlu fix.)
+2. **Table waris = `next_of_kin` (SINGULAR)** — bukan `next_of_kins`. (Disahkan dari schema sebenar Sesi 3.)
+3. **Module key lejar = `simpanan_saham`** (routes/app.php), bukan `lejar_transaksi`. (Belum verify `config/modules.php`.)
+4. **`avatar_path` (users) ≠ `foto_path` (members)** — dua benda berasingan.
+5. **PostgreSQL LIKE case-sensitive** → guna `LOWER()` + `whereRaw` untuk carian.
+6. **Migration order** — table yang rujuk members/meetings/loans perlu nombor migration lebih tinggi (FK).
+7. **`tenant_asset()`** untuk SEMUA fail upload tenant (logo/avatar/foto).
+8. **`composer dump-autoload`** lepas edit `helpers.php`.
+
+### Gotcha #12 — CACHE LEAK antara tenant (KRITIKAL)
+- **Masalah:** Laravel memoize cache store sekali per request. Kalau store ter-resolve sebelum tenancy init, ia terikat ke connection CENTRAL sampai habis request → cache semua tenant bocor masuk satu table cache central. Simptom: setting/tema satu tenant "berjangkit" ke tenant lain.
+- **FIX (dah apply + verified di dev DAN server):** `Cache::forgetDriver(config('cache.default'))` pada event `TenancyInitialized` + `TenancyEnded`, didaftar dalam `TenancyServiceProvider` (line ~115 & ~119).
+- `CacheTenancyBootstrapper` kekal **OFF**. `CACHE_STORE=database`.
+- ⚠️ JANGAN sentuh `Events\SavingTenant` / `SavingDomain` dalam TenancyServiceProvider — itu event stancl, bukan modul savings.
+
+### Peraturan deploy & kerja
+- **Edit di LOCAL** → commit → push → `git pull` di server. JANGAN edit code terus di server (elak git conflict).
+- **Pengecualian:** `.env`, firewall, DNS, `db_backup.py`, data DB = server-only (tak masuk git).
+- **`optimize:clear` / `config:clear`** lepas deploy. (Alias `cuci` di server = clear + cache config + cache routes.)
+- **Rutin deploy v2 = 2-step migration:** `migrate` (central) + `tenants:migrate` (semua tenant).
+- **Verify dengan `grep -n` selepas edit** (pengalaman pahit: edit tak save).
+- **Backup sebelum edit fail penting** (`cp fail fail.bak-$(date ...)`).
+- **`DROP DATABASE ... WITH (FORCE)`** untuk elak masalah connection pool masa padam tenant.
+
+---
+
+## 4. CARA KERJA DENGAN CLAUDE (preferensi user)
+
+- **Bahasa:** Melayu Malaysia, santai (panggil "bro" ok).
+- **Bukan rewrite penuh** — guide step-by-step, atau format CARI/TUKAR (📄 path → kod lama → kod baru).
+- **Brainstorm dulu** — terang sebab & trade-off sebelum laksana.
+- **Satu langkah satu masa** untuk operasi berisiko (DB, firewall) — verify output sebelum gerak.
+- **Push back bila perlu** — kalau user nak over-engineer atau ada cara lebih baik, cakap.
+- **Guna `ask_user_input`** untuk pilihan/keputusan supaya senang di mobile.
+
+---
+
+## 5. INFRASTRUKTUR SERVER (server-only, TAK masuk git)
+
+### Cloudflare + SSL (Sesi 3)
+- **Strategi:** Cloudflare Proxy (orange cloud) + **Cloudflare Origin Certificate** dipasang di nginx.
+- Cert di VPS: `/etc/ssl/cloudflare/koperasicms.site.pem` + `.key` (expire **2041** — set-and-forget).
+- **SSL mode di Cloudflare = Full (strict).**
+- **certbot TAK diperlukan** (keputusan asal Sesi 2.5 guna certbot Let's Encrypt — DITUKAR).
+- DNS records (semua **Proxied/orange**): `*.koperasicms.site`, `koperasicms.site`, `www` → `216.126.236.127`.
+- Cara verify trafik lalu CF: cari header `cf-ray` + `server: cloudflare` dalam `curl -sI`.
+
+### Firewall UFW (Sesi 3)
+- Port **2234** (SSH) — ALLOW.
+- Port **80** — ALLOW (HTTP redirect).
+- Port **443** — ALLOW **hanya dari range IP Cloudflare** (15 IPv4 + 7 IPv6, fetch dari `cloudflare.com/ips-v4` & `ips-v6`).
+- Default: `deny incoming`. Akses terus ke IP VPS port 443 dari bukan-CF → **timeout** (terbukti).
+- Sebab penting: melindungi `trustProxies('*')` daripada IP spoofing.
+
+### Real IP (trustProxies) — hutang #1 SELESAI
+- **App side:** `bootstrap/app.php` set `$middleware->trustProxies(at: '*', headers: X_FORWARDED_FOR|HOST|PORT|PROTO)`. Commit dah di GitHub, **belum pull ke server**.
+- **Server side:** firewall UFW (di atas) — selesai.
+- Kesan: `central_activity_logs.ip` nanti rekod IP pelawat sebenar (bukan IP CF). Header CF: `CF-Connecting-IP` / `X-Forwarded-For`.
+
+### Database PostgreSQL (server)
+- User app: **`baseri`** (bukan `postgres` lagi — ditukar Sesi 3) + password kuat (dalam `.env`, BUKAN `123456` lagi).
+- `baseri` ada `CREATEDB` (untuk stancl cipta tenant DB baru).
+- DB sedia ada: `koperasi_tenant` (central), `tenantujian1`, `tenantujian2` — owner `baseri`.
+- DB `koperasi` (lama, kosong, sampah) — owner `postgres`, **belum dipadam** (boleh padam bila-bila).
+- Tenant DB lama owned by `postgres` perlu `GRANT ALL` + `ALTER DEFAULT PRIVILEGES` ke `baseri`. Tenant BARU (dicipta selepas tukar `.env`) auto-owned `baseri` (takde isu).
+- Auth: connect via TCP `127.0.0.1` (md5/password), BUKAN peer auth.
+
+### `.env` server (kunci penting — `chmod 640`, group `www-data`)
+```
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://koperasicms.site
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_DATABASE=koperasi_tenant
+DB_USERNAME=baseri
+DB_PASSWORD=<password kuat — simpan dalam password manager>
+QUEUE_CONNECTION=sync
+CACHE_STORE=database
+SESSION_DRIVER=database
+```
+
+### Backup automatik (`/home/baseri/scripts/db_backup.py`)
+- Cron: `0 2 * * *` (setiap hari 2 pagi) + `* * * * * schedule:run`.
+- **Direka semula Sesi 3:** baca credential dari `.env` Laravel (satu sumber kebenaran) — BUKAN hardcode password lagi.
+- `ENV_FILE = /home/baseri/projek/koperasicms-with-tenant/.env`.
+- `pg_dumpall` semua DB → gzip → `rclone move` ke Google Drive `gdrive:Koperasi_ServerBackups`.
+- Permission: script `700`, `.env` `640`.
+- ⚠️ Belum ada: rotation backup, notifikasi gagal, logrotate untuk `backup.log`.
+- ⚠️ Backup belum pernah **di-restore-test** (Fasa C2).
+
+### Permission storage
+- `storage/` + `bootstrap/cache/` → mode `775`, owner `www-data:www-data`.
+- ⚠️ Tiada setgid (`g+s`) — polish Fasa C kalau nak konsisten SOP penuh.
+
+---
+
+## 6. FASA A — VERIFY DEPLOYMENT (✅ SELESAI Sesi 3)
+
+| # | Item | Hasil |
+|---|---|---|
+| A1 | DB lama selamat | ⏭️ SKIP — app lama dah dibuang, tiada DB lama nak jaga |
+| A2 | `.env` v2 server | ✅ DB user/password/url betul, GRANT semua DB |
+| A3 | `tenants:list` | ✅ |
+| A4 | Cache leak fix di server | ✅ `forgetDriver` ada (line 115 & 119) |
+| A5 | SSL | ✅ CF Proxy + Origin + Full strict |
+| A6 | Cron + permission | ✅ schedule:run + backup, storage 775 |
+| A7 | nginx | ✅ 2 server block (central + wildcard regex) |
+
+**Penemuan besar Sesi 3:** App lama (Baling) sudah dibuang dari VPS. Tiada data koperasi sebenar — semua testing. Maka **Fasa D (Migrate Baling) dipadam** dari roadmap.
+
+### nginx config (rujukan)
+- Server block 1: `server_name koperasicms.site www.koperasicms.site` (central).
+- Server block 2: `server_name ~^(?<tenant>.+)\.koperasicms\.site$` (wildcard tenant, regex).
+- Kedua-dua: `listen 443 ssl http2`, cert sama (`/etc/ssl/cloudflare/...`), HTTP→HTTPS redirect.
+
+---
+
+## 7. FASA B — TEST ISOLATION (✅ 15/15 LULUS Sesi 3)
+
+| Kumpulan | Ujian | Hasil |
+|---|---|---|
+| Session | 1–3 (login serentak, logout, tukar password) | ✅ |
+| Data CRUD | 4–7 (member, transaksi, mesyuarat+pinjaman, akaun+dividen) | ✅ tiada bocor |
+| Settings/Cache | 8 (tukar nama+tema) | ✅ cache fix kerja di server |
+| Storage | 9–11 (upload, folder isolation, cross-access 404) | ✅ `tenant_asset` betul |
+| Route | 12–14 (central vs tenant, domain tak wujud) | ✅ error bersih |
+| No Ahli | 15 (turutan `A0001` sendiri) | ✅ dua-dua tenant mula A0001 |
+
+**Bukti storage isolation:** fail dalam `storage/tenant<id>/app/public/{logos,avatars,members}/`. Cross-access dari domain lain → 404.
+**Kredensial seeder super-user:** `muhamad.baseri@gmail.com` / `@Password12345` (role `super-user`).
+
+---
+
+## 8. ROADMAP BERPRIORITI (Sesi 3 → seterusnya)
+
+> Peraturan emas: JANGAN mula fasa sebelum kriteria fasa sebelumnya dicapai.
+
+```
+FASA A: Verify Deployment      ✅ SELESAI (Sesi 3)
+FASA B: Test Isolation (15)    ✅ SELESAI (Sesi 3)
+FASA C: Kemas & Kunci          ← SETERUSNYA
+FASA E: SaaS Panel             (suspend/tier/billing)
+FASA F: Modul Koperasi         (pinjaman penuh, portal ahli, dll)
+(FASA D: Migrate Baling        — DIPADAM, tiada data sebenar)
+```
+
+### FASA C — Kemas & Kunci (SETERUSNYA)
+> Sebahagian dah selesai awal sebab kerja Sesi 3.
+
+- **C1.** Tukar password DB production — ✅ **SELESAI** (Sesi 3: `123456` → kuat, user `postgres` → `baseri`).
+- **C2.** Backup + **VERIFIED restore** — separuh: backup berfungsi ✅, tapi belum pernah test restore. *"Backup yang tak pernah di-restore = bukan backup."* Perlu: restore ke DB temp, banding kiraan row.
+- **C3.** Bug MeetingController `'admin'` → `'admin-koperasi'` (5 minit, commit).
+- **C4.** Sahkan module key — `grep simpanan_saham config/modules.php`; selaras blueprint.
+- **C5.** Failed-job/error visibility — `storage/logs` terjaga; optional notifikasi error (telegram/email). Tambah logrotate untuk `backup.log`.
+- **C6 (baru).** Deploy code terbaru ke server: `git pull` (`bootstrap/app.php` trustProxies + `config/tenancy.php` `--force`).
+- **C7 (baru).** Padam DB sampah `koperasi`.
+- **C8 (polish).** setgid `g+s` pada storage; kemas backup `.py.bak` lama.
+
+### FASA E — SaaS Panel (~3-5 sesi)
+> Rujuk §9 untuk schema DB penuh. Sub-fasa boleh siap berasingan:
+- **E1. Asas:** 6 migration central (urutan: `central_users` → `plans` → `subscriptions` → `invoices` → `payments` → `central_activity_logs`) + guard `auth:central` + login panel + seeder owner & 3 plan.
+- **E2. Pengurusan tenant:** senarai tenant + stat + butang ON/OFF (is_active + log WAJIB) + middleware `CheckTenantAktif` + view "Akaun Digantung". ← **fungsi suspend, siap awal sengaja.**
+- **E3. Cipta tenant dari UI:** borang panel → guna semula logik `TenantCipta` (refactor command jadi service supaya CLI & UI kongsi kod).
+- **E4. Billing manual:** jana invois (auto no siri), rekod bayaran (+bukti), senarai tunggakan, auto-tanda `lewat` (scheduler), suspend automatik (optional toggle).
+- **E5. Tier enforcement:** plan→modul (guna `ModuleAccess` sedia ada) + had `max_ahli` + paparan "Naik taraf plan".
+- **E6. Landing marketing:** page statik (features, pricing dari table `plans`, borang lead) — last.
+
+### FASA F — Modul Koperasi (ikut permintaan)
+- **F1.** Pinjaman lengkap — kadar faedah, jadual ansuran, rekod bayaran, penjamin, had kelayakan ikut saham, no rujukan, penyata. (Perlu sesi brainstorm design sendiri.)
+- **F2.** Portal ahli self-service — role `ahli` tengok baki saham/dividen/pinjaman sendiri.
+- **F3.** Resit rasmi PDF (no siri).
+- **F4.** Penyata tahunan ahli (cetak AGM).
+- **F5.** Fi/yuran keahlian + tracking tunggakan.
+- **F6.** Backup spatie per-tenant (selain pg_dumpall global).
+
+---
+
+## 9. BLUEPRINT DB — SAAS PANEL (CENTRAL) — untuk Fasa E
+
+> Reka bentuk SAHAJA (belum implement). Semua table ni di **CENTRAL DB** (`koperasi_tenant`) — milik pemilik SaaS, bukan data koperasi.
+
+### Prinsip
+1. `tenants.id` = **string** → semua FK ke tenant ikut jenis string.
+2. Wang = `decimal(10,2)` + `wang()`. Audit "siapa buat" pada tindakan kritikal.
+3. **Suspend ≠ Delete.** Data tenant tak pernah dipadam — pintu dikunci.
+4. Subscription berasingan dari Plan (sejarah kekal); Payment berasingan dari Invoice (boleh bayar separa).
+
+### Table baru (CENTRAL)
+**1. `central_users`** — admin SaaS (owner + staff). Guard berasingan `auth:central`. Lajur: id, name, email (unique), password, role (`owner`/`staff`), is_active, remember_token, timestamps.
+
+**2. `plans`** — definisi tier. Lajur: id, kod (unique: `basic`/`pro`/`enterprise`), nama, harga_bulanan, harga_tahunan (nullable), max_ahli (nullable=unlimited), max_staff (nullable), modul_dibenarkan (json array module_key), features (json — expansion slot), is_active, susunan, timestamps.
+
+**3. `subscriptions`** — langganan tenant + sejarah. Lajur: id, tenant_id (string FK cascade), plan_id (FK restrict), status (`trial`/`aktif`/`digantung`/`tamat`/`batal`), tarikh_mula, tarikh_tamat (nullable), **harga_terkunci** (harga masa subscribe), kitaran (`bulanan`/`tahunan`), auto_renew, catatan, timestamps.
+- Satu tenant boleh BANYAK row (sejarah) tapi SATU aktif/trial/digantung pada satu masa — partial unique index:
+  `CREATE UNIQUE INDEX ON subscriptions (tenant_id) WHERE status IN ('trial','aktif','digantung');`
+
+**4. `invoices`** — bil. Lajur: id, no_invois (unique auto `INV-2026-0001`), tenant_id (string FK cascade), subscription_id (FK nullable, nullOnDelete), amaun, tarikh_invois, tarikh_due (INDEX), tempoh_dari, tempoh_hingga, status (`belum_bayar`/`dibayar`/`lewat`/`batal` — INDEX (tenant_id,status)), catatan, timestamps.
+
+**5. `payments`** — rekod bayaran (berasingan dari invoice!). Lajur: id, invoice_id (FK restrict), amaun (boleh < invois — bayar separa), tarikh_bayar, kaedah (`tunai`/`transfer`/`fpx`/`gateway`), rujukan (nullable), resit_path (nullable), disahkan_oleh (FK central_users nullable — audit), catatan, timestamps.
+- Σ payments >= amaun invois → status invois jadi `dibayar` (kira di app/service, BUKAN trigger DB).
+
+**6. `central_activity_logs`** — audit trail. Lajur: id, central_user_id (FK nullable=sistem), tenant_id (string FK nullable), tindakan (`suspend`/`activate`/`cipta_tenant`/`tukar_plan`/`sah_bayaran`...), detail (json snapshot), ip (nullable), created_at (tiada updated_at — log tak diedit).
+- ⭐ KRITIKAL: bila suspend koperasi orang, MESTI ada rekod siapa/bila/kenapa.
+
+**7. Status tenant (on/off)** — BUKAN table baru. Guna VirtualColumn `tenants.data` (zero migration): `is_active` (kill-switch manual), `suspended_at`, `suspend_sebab`.
+- **Middleware `CheckTenantAktif`** (selepas `InitializeTenancyByDomain`): BLOCK jika `tenant->is_active === false` ATAU subscription status `digantung`/`tamat` → paparkan view "Akaun Digantung". Dua lapisan: `is_active` (manual override) + subscription status (automatik ikut billing).
+
+### Enforcement tier dalam app tenant
+1. `max_ahli` → check sebelum simpan member baru.
+2. `modul_dibenarkan` → suntik ke `ModuleAccess::userCan()` — **guna semula sistem module/toggle sedia ada**.
+3. ⚠️ Cache info plan per tenant: ingat gotcha #12! Cache dalam cache TENANT dengan TTL pendek (5-15 min), atau baca terus tiap request (1 query indexed).
+
+### Turutan migration (WAJIB — sebab FK)
+`central_users` → `plans` → `subscriptions` → `invoices` → `payments` → `central_activity_logs`
+
+### Expansion masa depan (rancang RUANG, jangan bina lagi)
+`leads` (borang demo), `announcements` + `announcement_tenant` (broadcast), `gateway_webhooks` (log callback toyyibPay/Billplz), `support_tickets`, `central_roles` (RBAC). Slot json (`plans.features`, `logs.detail`, `tenants.data`) = penyerap perubahan kecil tanpa migration.
+
+---
+
+## 10. HUTANG & PENDING (senarai penuh)
+
+### Code (dalam repo — perlu local→push→pull)
+- ⏳ **`bootstrap/app.php`** — trustProxies dah commit di GitHub, **belum `git pull` ke server**.
+- ⏳ **`config/tenancy.php`** — `--force` masih dikomen (line ~201). Punca seed gagal di production (prompt "Application In Production"). Sekarang guna jalan tengah `tenants:seed --tenants=X --force`. **Fix kekal:** uncomment `--force` → push → pull. Tenant baru lepas tu auto-seed betul.
+- ⏳ Bug MeetingController `'admin'` → `'admin-koperasi'` (C3).
+
+### Server-only
+- ⏳ Padam DB sampah `koperasi` (C7).
+- ⏳ Test restore backup (C2).
+- ⏳ Rotation + notifikasi gagal backup; logrotate `backup.log` (C5).
+- ⏳ setgid `g+s` storage; kemas `db_backup.py.bak` lama (C8).
+
+### SELESAI Sesi 3
+- ✅ Hutang #1 (Real IP) — trustProxies + firewall.
+- ✅ Hutang #2 (DNS record redundant `kpmbb`/`kpkbaling`) — dipadam di Cloudflare.
+- ✅ Tukar password DB + user `postgres`→`baseri` (C1).
+- ✅ Refactor `db_backup.py` baca dari `.env`.
+
+---
+
+## 11. SOP — OPERASI BIASA
+
+### Cipta tenant baru
+```bash
+php artisan tenant:cipta <id> <id>.koperasicms.site --nama="Nama Koperasi"
+# Kalau production prompt block seed (sebelum fix --force):
+php artisan tenants:seed --tenants=<id> --force
+```
+Kredensial super-user default: `muhamad.baseri@gmail.com` / `@Password12345`.
+
+### Padam tenant (SOP — urutan WAJIB: domains → tenants → DROP DB → storage)
+```bash
+# 1. Padam rekod central
+sudo -u postgres psql -d koperasi_tenant <<'EOF'
+DELETE FROM domains WHERE tenant_id IN ('<id>');
+DELETE FROM tenants WHERE id IN ('<id>');
+EOF
+# 2. Drop DB (FORCE untuk elak masalah connection)
+sudo -u postgres psql -c "DROP DATABASE tenant<id> WITH (FORCE);"
+# 3. Padam storage
+sudo rm -rf storage/tenant<id>
+# 4. Verify
+php artisan tenants:list
+```
+
+### Tukar password DB
+```bash
+read -s -p "Password baru: " NEWPASS && echo
+sudo -u postgres psql -c "ALTER USER baseri WITH PASSWORD '$NEWPASS' CREATEDB;"
+# Update DB_PASSWORD dalam .env, lepas tu:
+php artisan config:clear   # atau alias `cuci`
+```
+
+### Grant akses DB tenant lama (kalau owner masih postgres)
+```bash
+sudo -u postgres psql -d <db> <<'EOF'
+GRANT ALL ON ALL TABLES IN SCHEMA public TO baseri;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO baseri;
+GRANT ALL ON SCHEMA public TO baseri;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO baseri;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO baseri;
+EOF
+```
+
+### Verify trafik melalui Cloudflare
+```bash
+curl -sI https://<id>.koperasicms.site   # cari: cf-ray, server: cloudflare, HTTP/2 302
+```
+
+### Test backup manual
+```bash
+python3 /home/baseri/scripts/db_backup.py
+rclone ls gdrive:Koperasi_ServerBackups | tail -5
+```
+
+---
+
+## 12. BLUEPRINT DB — TENANT (rujukan ringkas modul koperasi)
+
+> Setiap tenant DB ada ~24 table. Koperasi berasaskan SAHAM.
+
+**Teras RBAC:** `users`, `roles`, `permissions`, `role_user`, `permission_role`, `module_role`.
+**7 role:** super-user, admin-koperasi, pengurus, kerani, jk, auditor, ahli.
+**Keahlian:** `members` (no_ahli unik `A0001`...), `next_of_kin` (singular!).
+**Transaksi/saham:** `account_categories`, `account_entries`, share-related.
+**Pinjaman:** `loans` (+ pencadang_id, penyokong_id, meeting_id).
+**Mesyuarat:** `meetings`.
+**Dividen:** `dividend_runs`, `dividend_shares`, `dividend_allocations`.
+**Pemilikan:** `ownership_transfers`.
+**Sistem:** `settings` (key-value white-label + toggle produk), `cache`, `cache_locks`, `sessions`, `migrations`.
+
+### Nota schema penting
+- Money: `decimal` tepat di DB; PHP guna `wang()`.
+- FK kelulusan: loans/transfers ada `meeting_id` + `pencadang_id` + `penyokong_id` + `catatan_kelulusan` (nullOnDelete).
+- Audit: setiap proses ada lajur "siapa buat".
+- Toggle produk: kawal via `settings`, bukan struktur DB.
+- Untuk schema 100% tepat: `php artisan tenants:run "db:show" --tenants=ujian1`.
+
+---
+
+## 13. SEEDER (`DatabaseSeeder` — urutan)
+```
+1. RoleSeeder            (7 peranan)
+2. PermissionSeeder      (kebenaran + petakan ke peranan)
+3. SuperUserSeeder       (muhamad.baseri@gmail.com / @Password12345)
+4. ModuleAccessSeeder    (akses modul lalai per peranan)
+5. AccountCategorySeeder (kategori akaun)
+6. SettingSeeder         (logo, nama, tema)
+// Sample seeder (Member/AccountEntry/Loan/Meeting) — dikomen, untuk demo sahaja
+```
+⚠️ `SuperUserSeeder` cipta user dulu, lepas tu cari role `super-user` — urutan penting (Role mesti dahulu).
+
+---
+
+*Tamat README induk. Sesi seterusnya: mula dengan **Fasa C** (Kemas & Kunci) — keutamaan C6 (deploy code) + C2 (test restore backup) + C3 (bug MeetingController).*
