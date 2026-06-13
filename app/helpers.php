@@ -33,3 +33,32 @@ if (! function_exists('pinjaman_aktif')) {
         return \App\Models\Setting::get('produk_pinjaman', '0') === '1';
     }
 }
+
+
+if (! function_exists('simpan_imej_mampat')) {
+    /**
+     * Simpan imej yang dimuat naik selepas resize + mampat ke WebP.
+     */
+    function simpan_imej_mampat(
+        \Illuminate\Http\UploadedFile $fail,
+        string $folder,
+        int $maxSisi = 600,
+        int $kualiti = 85
+    ): string {
+        $manager = new \Intervention\Image\ImageManager(
+            new \Intervention\Image\Drivers\Gd\Driver()
+        );
+
+        $imej = $manager->decode($fail->getRealPath());
+        $imej->scaleDown(width: $maxSisi, height: $maxSisi);
+
+        $data = (string) $imej->encode(
+            new \Intervention\Image\Encoders\WebpEncoder(quality: $kualiti)
+        );
+
+        $namaFail = $folder . '/' . \Illuminate\Support\Str::random(40) . '.webp';
+        \Illuminate\Support\Facades\Storage::disk('public')->put($namaFail, $data);
+
+        return $namaFail;
+    }
+}

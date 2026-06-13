@@ -34,7 +34,7 @@ class ProfileController extends Controller
             if ($user->avatar_path && Storage::disk('public')->exists($user->avatar_path)) {
                 Storage::disk('public')->delete($user->avatar_path);
             }
-            $user->avatar_path = $request->file('avatar')->store('avatars', 'public');
+            $user->avatar_path = simpan_imej_mampat($request->file('avatar'), 'avatars');
         }
 
         $user->save();

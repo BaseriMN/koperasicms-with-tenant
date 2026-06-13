@@ -111,7 +111,7 @@ class MemberController extends Controller
             'tarikh_sertai' => $data['tarikh_sertai'] ?? now()->toDateString(),
             'status'        => $data['status'] ?? 'aktif',
             'foto_path'     => $request->hasFile('foto')
-                ? $request->file('foto')->store('members', 'public')
+                ? simpan_imej_mampat($request->file('foto'), 'members')
                 : null,
             // no_ahli auto-jana oleh model
         ]);
@@ -156,7 +156,7 @@ class MemberController extends Controller
             if ($member->foto_path && Storage::disk('public')->exists($member->foto_path)) {
                 Storage::disk('public')->delete($member->foto_path);
             }
-            $member->foto_path = $request->file('foto')->store('members', 'public');
+            $member->foto_path = simpan_imej_mampat($request->file('foto'), 'members');
         }
 
         $member->update([
